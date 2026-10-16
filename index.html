@@ -15,9 +15,9 @@
         }
 
         body {
-            background-color: #121212;
+            background-color: #0d0f18;
             color: white;
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -29,57 +29,80 @@
             position: relative;
             width: 100vw;
             height: 100vh;
-            max-width: 400px;
-            max-height: 700px;
+            max-width: 450px;
+            max-height: 800px;
+            background: linear-gradient(to bottom, #1a1c29, #0d0f18);
+            box-shadow: 0 0 20px rgba(0, 242, 254, 0.2);
+            overflow: hidden;
         }
 
         canvas {
-            background: linear-gradient(#1e90ff, #87ceeb);
             display: block;
             width: 100%;
             height: 100%;
         }
 
-        #score {
+        #ui-layer {
             position: absolute;
             top: 20px;
             left: 20px;
-            font-size: 24px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 20px;
             font-weight: bold;
-            color: #fff;
-            text-shadow: 2px 2px 4px #000;
             z-index: 10;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
         }
 
-        #game-over {
+        #score-board {
+            color: #00f2fe;
+        }
+
+        #game-over-screen {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.85);
+            background: rgba(13, 15, 24, 0.9);
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
             z-index: 20;
+            transition: opacity 0.3s ease;
         }
 
         .hidden {
             display: none !important;
         }
 
+        h1 {
+            font-size: 32px;
+            color: #ff4757;
+            margin-bottom: 10px;
+            text-shadow: 0 0 10px rgba(255, 71, 87, 0.5);
+        }
+
+        p {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #a4b0be;
+        }
+
         button {
-            margin-top: 15px;
-            padding: 12px 30px;
+            padding: 14px 35px;
             font-size: 18px;
             font-weight: bold;
-            background-color: #ff4757;
-            color: white;
+            background: linear-gradient(45deg, #00f2fe, #4facfe);
+            color: #0d0f18;
             border: none;
-            border-radius: 25px;
+            border-radius: 30px;
             cursor: pointer;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            box-shadow: 0 4px 15px rgba(0, 242, 254, 0.4);
+            transition: transform 0.1s ease;
         }
 
         button:active {
@@ -89,16 +112,19 @@
 </head>
 <body>
     <div id="game-container">
-        <div id="score">Score: 0</div>
+        <div id="ui-layer">
+            <div id="score-board">SCORE: 0</div>
+        </div>
         <canvas id="gameCanvas"></canvas>
-        <div id="game-over" class="hidden">
-            <h1>GAME OVER</h1>
-            <p id="final-score" style="margin-top: 10px; font-size: 20px;">Score: 0</p>
+        <div id="game-over-screen" class="hidden">
+            <h1>CRASHED!</h1>
+            <p id="final-score">Score: 0</p>
             <button onclick="restartGame()">PLAY AGAIN</button>
         </div>
     </div>
 
     <script>
+        // Initialize Telegram WebApp
         if (window.Telegram && window.Telegram.WebApp) {
             window.Telegram.WebApp.ready();
             window.Telegram.WebApp.expand();
@@ -106,60 +132,85 @@
 
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const scoreDisplay = document.getElementById('score');
-        const gameOverScreen = document.getElementById('game-over');
+        const scoreBoard = document.getElementById('score-board');
+        const gameOverScreen = document.getElementById('game-over-screen');
         const finalScoreDisplay = document.getElementById('final-score');
 
-        // Fixed internal game resolution for consistent physics
-        const GAME_WIDTH = 400;
-        const GAME_HEIGHT = 600;
-        canvas.width = GAME_WIDTH;
-        canvas.height = GAME_HEIGHT;
+        // Internal Game Resolution
+        const WIDTH = 400;
+        const HEIGHT = 700;
+        canvas.width = WIDTH;
+        canvas.height = HEIGHT;
 
-        let groundY = GAME_HEIGHT - 120;
-        let player = { x: 60, y: groundY - 50, width: 35, height: 50, vy: 0, jumping: false };
+        const GROUND_Y = 550;
+        let game = {
+            score: 0,
+            speed: 6,
+            isOver: false
+        };
+
+        let player = {
+            x: 60,
+            y: GROUND_Y - 60,
+            width: 40,
+            height: 60,
+            vy: 0,
+            gravity: 0.7,
+            jumpPower: -13.5,
+            jumping: false
+        };
+
         let obstacles = [];
-        let score = 0;
-        let isGameOver = false;
+        let particles = [];
 
-        window.addEventListener('touchstart', jump);
-        window.addEventListener('mousedown', jump);
-        window.addEventListener('keydown', (e) => { 
-            if (e.code === 'Space' || e.code === 'ArrowUp') jump(); 
+        // Controls
+        window.addEventListener('touchstart', triggerJump);
+        window.addEventListener('mousedown', triggerJump);
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' || e.code === 'ArrowUp') {
+                triggerJump();
+            }
         });
 
-        function jump(e) {
+        function triggerJump(e) {
             if (e && e.type === 'touchstart') e.preventDefault();
-            if (!player.jumping && !isGameOver) {
-                player.vy = -13;
+            if (!player.jumping && !game.isOver) {
+                player.vy = player.jumpPower;
                 player.jumping = true;
             }
         }
 
         function update() {
-            if (isGameOver) return;
-            // Gravity & Physics
-            player.vy += 0.65;
+            if (game.isOver) return;
+
+            // Player Physics
+            player.vy += player.gravity;
             player.y += player.vy;
 
-            if (player.y >= groundY - player.height) {
-                player.y = groundY - player.height;
+            if (player.y >= GROUND_Y - player.height) {
+                player.y = GROUND_Y - player.height;
                 player.vy = 0;
                 player.jumping = false;
             }
 
-            // Spawn Obstacles
-            if (Math.random() < 0.022) {
-                if (obstacles.length === 0 || obstacles[obstacles.length - 1].x < GAME_WIDTH - 180) {
-                    obstacles.push({ x: GAME_WIDTH, y: groundY - 45, width: 25, height: 45 });
+            // Obstacle Spawning
+            if (Math.random() < 0.02) {
+                if (obstacles.length === 0 || obstacles[obstacles.length - 1].x < WIDTH - 200) {
+                    obstacles.push({
+                        x: WIDTH,
+                        y: GROUND_Y - 50,
+                        width: 30,
+                        height: 50,
+                        color: '#ff4757'
+                    });
                 }
             }
 
-            // Move Obstacles
-            for (let i = 0; i < obstacles.length; i++) {
-                obstacles[i].x -= 6;
+            // Move Obstacles & Check Collisions
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                obstacles[i].x -= game.speed;
 
-                // Collision Detection
+                // Collision Detection (AABB)
                 if (
                     player.x < obstacles[i].x + obstacles[i].width &&
                     player.x + player.width > obstacles[i].x &&
@@ -168,13 +219,16 @@
                 ) {
                     endGame();
                 }
-            }
 
-            // Remove offscreen obstacles & add score
-            if (obstacles.length > 0 && obstacles[0].x < -40) {
-                obstacles.shift();
-                score += 10;
-                scoreDisplay.innerText = Score: ${score};
+                // Remove offscreen obstacles
+                if (obstacles[i].x + obstacles[i].width < 0) {
+                    obstacles.splice(i, 1);
+                    game.score += 10;
+                    scoreBoard.innerText = SCORE: ${game.score};
+                    
+                    // Gradually increase speed
+                    if (game.speed < 12) game.speed += 0.1;
+                }
             }
 
             draw();
@@ -182,43 +236,61 @@
         }
 
         function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // Clear Screen
+            ctx.clearRect(0, 0, WIDTH, HEIGHT);
 
-            // Ground Background
-            ctx.fillStyle = '#2d3436';
-            ctx.fillRect(0, groundY, canvas.width, GAME_HEIGHT - groundY);
-            ctx.fillStyle = '#2ed573';
-            ctx.fillRect(0, groundY, canvas.width, 12);
+            // Draw Background Grid/Stars effect
+            ctx.fillStyle = '#16192b';
+            ctx.fillRect(0, 0, WIDTH, GROUND_Y);
 
-            // Player (Red Box)
-            ctx.fillStyle = '#ff4757';
+            // Draw Ground
+            ctx.fillStyle = '#0f111a';
+            ctx.fillRect(0, GROUND_Y, WIDTH, HEIGHT - GROUND_Y);
+            
+            // Neon Ground Line
+            ctx.strokeStyle = '#00f2fe';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(0, GROUND_Y);
+            ctx.lineTo(WIDTH, GROUND_Y);
+            ctx.stroke();
+
+            // Draw Player (NeoRider character representation)
+            ctx.fillStyle = '#00f2fe';
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#00f2fe';
             ctx.fillRect(player.x, player.y, player.width, player.height);
 
-            // Obstacles (Yellow Boxes)
-            ctx.fillStyle = '#ffa502';
+            // Draw Obstacles
+            ctx.shadowColor = '#ff4757';
             obstacles.forEach(obs => {
+                ctx.fillStyle = obs.color;
                 ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
             });
-        }
 
+            // Reset shadow for performance
+            ctx.shadowBlur = 0;
+        }
         function endGame() {
-            isGameOver = true;
-            finalScoreDisplay.innerText = Score: ${score};
+            game.isOver = true;
+            finalScoreDisplay.innerText = Score: ${game.score};
             gameOverScreen.classList.remove('hidden');
         }
 
         function restartGame() {
-            player.y = groundY - player.height;
+            game.score = 0;
+            game.speed = 6;
+            game.isOver = false;
+            player.y = GROUND_Y - player.height;
             player.vy = 0;
             player.jumping = false;
             obstacles = [];
-            score = 0;
-            isGameOver = false;
-            scoreDisplay.innerText = Score: 0;
+            scoreBoard.innerText = SCORE: 0;
             gameOverScreen.classList.add('hidden');
             update();
         }
 
+        // Start Game Loop
         update();
     </script>
 </body>
