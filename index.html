@@ -3,25 +3,218 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Subway Runner - Telegram Mini App</title>
-    <link rel="stylesheet" href="style.css">
-    <!-- Telegram Web App SDK -->
+    <title>NeoRider Runner</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <!-- Three.js Library for 3D Graphics -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            touch-action: manipulation;
+        }
+
+        body {
+            background-color: #121212;
+            color: white;
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100%;
+            max-width: 360px;
+            height: 500px;
+        }
+
+        canvas {
+            background: linear-gradient(#1e90ff, #87ceeb);
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        #score {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            font-size: 20px;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 1px 1px 3px #000;
+        }
+
+        #game-over {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            border-radius: 12px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        button {
+            margin-top: 15px;
+            padding: 12px 25px;
+            font-size: 18px;
+            font-weight: bold;
+            background-color: #ff4757;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+    </style>
 </head>
 <body>
-    <div id="game-ui">
-        <div id="score">Coins: 0</div>
-        <div id="controls-hint">Swipe or Use Arrow Keys (← ↑ →)</div>
+    <div id="game-container">
+        <div id="score">Score: 0</div>
+        <canvas id="gameCanvas" width="360" height="500"></canvas>
+        <div id="game-over" class="hidden">
+            <h1>GAME OVER</h1>
+            <p id="final-score" style="margin-top: 10px; font-size: 18px;">Score: 0</p>
+            <button onclick="restartGame()">PLAY AGAIN</button>
+        </div>
     </div>
 
-    <div id="game-over" class="hidden">
-        <h1>GAME OVER</h1>
-        <p id="final-score">Coins Collected: 0</p>
-        <button onclick="restartGame()">PLAY AGAIN</button>
-    </div>
+    <script>
+        // Telegram WebApp Setup
+        if (window.Telegram && window.Telegram.WebApp) {
+            window.Telegram.WebApp.ready();
+            window.Telegram.WebApp.expand();
+        }
 
-    <script src="script.js"></script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score');
+        const gameOverScreen = document.getElementById('game-over');
+        const finalScoreDisplay = document.getElementById('final-score');
+
+        let player = { x: 50, y: 380, width: 30, height: 40, vy: 0, jumping: false };
+        let obstacles = [];
+        let score = 0;
+        let isGameOver = false;
+
+        // Jump Controls for Touch and Keys
+        window.addEventListener('touchstart', jump);
+        window.addEventListener('mousedown', jump);
+        window.addEventListener('keydown', (e) => { 
+            if (e.code === 'Space' || e.code === 'ArrowUp') jump(); 
+        });
+
+        function jump(e) {
+            if (e && e.type === 'touchstart') e.preventDefault();
+            if (!player.jumping && !isGameOver) {
+                player.vy = -12;
+                player.jumping = true;
+            }
+        }
+
+        function update() {
+            if (isGameOver) return;
+
+            // Gravity
+            player.vy += 0.6;
+            player.y += player.vy;
+            if (player.y >= 380) {
+                player.y = 380;
+                player.jumping = false;
+            }
+
+            // Spawn Obstacles
+            if (Math.random() < 0.02) {
+                if (obstacles.length === 0 || obstacles[obstacles.length - 1].x < 220) {
+                    obstacles.push({ x: 360, y: 390, width: 20, height: 30 });
+                }
+            }
+
+            // Move Obstacles
+            for (let i = 0; i < obstacles.length; i++) {
+                obstacles[i].x -= 5;
+
+                // Collision Detection
+                if (
+                    player.x < obstacles[i].x + obstacles[i].width &&
+                    player.x + player.width > obstacles[i].x &&
+                    player.y < obstacles[i].y + obstacles[i].height &&
+                    player.y + player.height > obstacles[i].y
+                ) {
+                    endGame();
+                }
+            }
+
+            // Remove offscreen obstacles & add score
+            if (obstacles.length > 0 && obstacles[0].x < -30) {
+                obstacles.shift();
+                score += 10;
+                scoreDisplay.innerText = Score: ${score};
+            }
+
+            draw();
+            requestAnimationFrame(update);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Ground
+            ctx.fillStyle = '#2d3436';
+            ctx.fillRect(0, 420, canvas.width, 80);
+            ctx.fillStyle = '#2ed573';
+            ctx.fillRect(0, 420, canvas.width, 10);
+
+            // Player (Red)
+            ctx.fillStyle = '#ff4757';
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            // Obstacles (Yellow)
+            ctx.fillStyle = '#ffa502';
+            obstacles.forEach(obs => {
+                ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+            });
+        }
+
+        function endGame() {
+            isGameOver = true;
+            finalScoreDisplay.innerText = Score: ${score};
+            gameOverScreen.classList.remove('hidden');
+        }
+
+        function restartGame() {
+            player.y = 380;
+            player.vy = 0;
+            player.jumping = false;
+            obstacles = [];
+            score = 0;
+            isGameOver = false;
+            scoreDisplay.innerText = Score: 0;
+            gameOverScreen.classList.add('hidden');
+            update();
+        }
+
+        // Start Loop
+        update();
+    </script>
 </body>
 </html>
