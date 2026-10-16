@@ -1,0 +1,208 @@
+// Initialize Telegram WebApp
+if (window.Telegram && window.Telegram.WebApp) {
+    window.Telegram.WebApp.ready();
+    window.Telegram.WebApp.expand();
+}
+
+let scene, camera, renderer;
+let player, track;
+let lane = 0; // -1: Left, 0: Center, 1: Right
+const laneWidth = 2.5;
+
+let isJumping = false;
+let jumpVelocity = 0;
+const gravity = -0.015;
+
+let obstacles = [];
+let coins = [];
+let coinCount = 0;
+let isGameOver = false;
+let gameSpeed = 0.3;
+
+function init() {
+    // 1. Scene Setup
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1e90ff);
+    scene.fog = new THREE.Fog(0x1e90ff, 10, 50);
+
+    // 2. Camera Setup
+    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 3, 7);
+    camera.rotation.x = -0.2;
+
+    // 3. Renderer Setup
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // 4. Lights
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+    dirLight.position.set(0, 20, 10);
+    scene.add(dirLight);
+
+    // 5. Build Track (Road)
+    const trackGeo = new THREE.PlaneGeometry(8, 200);
+    const trackMat = new THREE.MeshBasicMaterial({ color: 0x333333 });
+    track = new THREE.Mesh(trackGeo, trackMat);
+    track.rotation.x = -Math.PI / 2;
+    track.position.z = -80;
+    scene.add(track);
+
+    // 6. Player (Character)
+    const playerGeo = new THREE.BoxGeometry(1, 1.8, 1);
+    const playerMat = new THREE.MeshLambertMaterial({ color: 0xff4757 });
+    player = new THREE.Mesh(playerGeo, playerMat);
+    player.position.set(0, 0.9, 0);
+    scene.add(player);
+
+    // Setup Controls
+    setupControls();
+
+    // Start Loop
+    animate();
+}
+
+function setupControls() {
+    // Keyboard Controls
+    window.addEventListener('keydown', (e) => {
+        if (isGameOver) return;
+        if (e.key === 'ArrowLeft' && lane > -1) lane--;
+        if (e.key === 'ArrowRight' && lane < 1) lane++;
+        if ((e.key === 'ArrowUp' || e.key === ' ') && !isJumping) {
+            isJumping = true;
+            jumpVelocity = 0.3;
+        }
+    });
+
+    // Touch Swipe Controls for Mobile
+    let startX = 0, startY = 0;
+    window.addEventListener('touchstart', (e) => {
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+    });
+
+    window.addEventListener('touchend', (e) => {
+        if (isGameOver) return;
+        let diffX = e.changedTouches[0].clientX - startX;
+        let diffY = e.changedTouches[0].clientY - startY;
+
+        if (Math.abs(diffX) > Math.abs(diffY)) {
+            if (diffX > 30 && lane < 1) lane++; // Swipe Right
+            else if (diffX < -30 && lane > -1) lane--; // Swipe Left
+        } else {
+            if (diffY < -30 && !isJumping) { // Swipe Up to Jump
+                isJumping = true;
+                jumpVelocity = 0.3;
+            }
+        }
+    });
+}
+
+function spawnObstacle() {
+    const lanePos = [-laneWidth, 0, laneWidth][Math.floor(Math.random() * 3)];
+    const obsGeo = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+    const obsMat = new THREE.MeshLambertMaterial({ color: 0x2ed573 });
+    const obs = new THREE.Mesh(obsGeo, obsMat);
+    obs.position.set(lanePos, 0.75, -40);
+    scene.add(obs);
+    obstacles.push(obs);
+}
+
+function spawnCoin() {
+    const lanePos = [-laneWidth, 0, laneWidth][Math.floor(Math.random() * 3)];
+    const coinGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.1, 16);
+    const coinMat = new THREE.MeshLambertMaterial({ color: 0xffd700 });
+    const coin = new THREE.Mesh(coinGeo, coinMat);
+    coin.rotation.x = Math.PI / 2;
+    coin.position.set(lanePos, 1, -40);
+    scene.add(coin);
+    coins.push(coin);
+}
+
+function animate() {
+    if (isGameOver) return;
+
+    requestAnimationFrame(animate);
+
+    // Player Horizontal Movement
+    const targetX = lane * laneWidth;
+    player.position.x += (targetX - player.position.x) * 0.2;
+	
+	// Player Jump Logic
+    if (isJumping) {
+        player.position.y += jumpVelocity;
+        jumpVelocity += gravity;
+        if (player.position.y <= 0.9) {
+            player.position.y = 0.9;
+            isJumping = false;
+        }
+    }
+
+    // Spawn Obstacles and Coins
+    if (Math.random() < 0.02) spawnObstacle();
+    if (Math.random() < 0.03) spawnCoin();
+
+    // Move Obstacles
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+        let obs = obstacles[i];
+        obs.position.z += gameSpeed;
+
+        // Collision Detection with Player
+        if (Math.abs(obs.position.z - player.position.z) < 1 &&
+            Math.abs(obs.position.x - player.position.x) < 0.8 &&
+            player.position.y < 1.5) {
+            endGame();
+        }
+
+        if (obs.position.z > 5) {
+            scene.remove(obs);
+            obstacles.splice(i, 1);
+        }
+    }
+
+    // Move and Collect Coins
+    for (let i = coins.length - 1; i >= 0; i--) {
+        let coin = coins[i];
+        coin.position.z += gameSpeed;
+        coin.rotation.z += 0.05;
+
+        // Collect Coin
+        if (Math.abs(coin.position.z - player.position.z) < 1 &&
+            Math.abs(coin.position.x - player.position.x) < 0.8) {
+            coinCount += 1;
+            document.getElementById('score').innerText = Coins: ${coinCount};
+            scene.remove(coin);
+            coins.splice(i, 1);
+        } else if (coin.position.z > 5) {
+            scene.remove(coin);
+            coins.splice(i, 1);
+        }
+    }
+
+    renderer.render(scene, camera);
+}
+
+function endGame() {
+    isGameOver = true;
+    document.getElementById('final-score').innerText = Coins Collected: ${coinCount};
+    document.getElementById('game-over').classList.remove('hidden');
+}
+
+function restartGame() {
+    obstacles.forEach(obs => scene.remove(obs));
+    coins.forEach(coin => scene.remove(coin));
+    obstacles = [];
+    coins = [];
+    coinCount = 0;
+    lane = 0;
+    player.position.set(0, 0.9, 0);
+    document.getElementById('score').innerText = Coins: 0;
+    document.getElementById('game-over').classList.add('hidden');
+    isGameOver = false;
+    animate();
+}
+
+window.onload = init;
