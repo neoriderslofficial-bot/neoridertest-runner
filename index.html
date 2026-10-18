@@ -11,13 +11,13 @@
             padding: 0;
             box-sizing: border-box;
             user-select: none;
-            touch-action: manipulation;
+            -webkit-user-select: none;
         }
 
         body {
-            background-color: #0d0f18;
-            color: white;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0b0c10;
+            color: #ffffff;
+            font-family: Arial, sans-serif;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -27,37 +27,29 @@
 
         #game-container {
             position: relative;
-            width: 100vw;
-            height: 100vh;
-            max-width: 450px;
-            max-height: 800px;
-            background: linear-gradient(to bottom, #1a1c29, #0d0f18);
-            box-shadow: 0 0 20px rgba(0, 242, 254, 0.2);
-            overflow: hidden;
+            width: 100%;
+            max-width: 400px;
+            height: 600px;
+            background: #1f2833;
+            border: 2px solid #66fcf1;
+            box-shadow: 0 0 20px rgba(102, 252, 241, 0.4);
         }
 
         canvas {
             display: block;
             width: 100%;
             height: 100%;
+            background: linear-gradient(to bottom, #111318, #1f2833);
         }
 
-        #ui-layer {
+        #ui-score {
             position: absolute;
-            top: 20px;
+            top: 15px;
             left: 20px;
-            right: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 20px;
+            font-size: 24px;
             font-weight: bold;
-            z-index: 10;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
-        }
-
-        #score-board {
-            color: #00f2fe;
+            color: #66fcf1;
+            text-shadow: 2px 2px 4px #000;
         }
 
         #game-over-screen {
@@ -66,13 +58,11 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(13, 15, 24, 0.9);
+            background: rgba(11, 12, 16, 0.92);
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            z-index: 20;
-            transition: opacity 0.3s ease;
         }
 
         .hidden {
@@ -80,29 +70,28 @@
         }
 
         h1 {
-            font-size: 32px;
             color: #ff4757;
+            font-size: 36px;
             margin-bottom: 10px;
             text-shadow: 0 0 10px rgba(255, 71, 87, 0.5);
         }
 
         p {
-            font-size: 18px;
+            font-size: 20px;
             margin-bottom: 20px;
-            color: #a4b0be;
+            color: #c5c6c7;
         }
 
         button {
             padding: 14px 35px;
             font-size: 18px;
             font-weight: bold;
-            background: linear-gradient(45deg, #00f2fe, #4facfe);
-            color: #0d0f18;
+            background-color: #ff4757;
+            color: white;
             border: none;
-            border-radius: 30px;
+            border-radius: 25px;
             cursor: pointer;
-            box-shadow: 0 4px 15px rgba(0, 242, 254, 0.4);
-            transition: transform 0.1s ease;
+            box-shadow: 0 4px 15px rgba(255, 71, 87, 0.4);
         }
 
         button:active {
@@ -112,19 +101,16 @@
 </head>
 <body>
     <div id="game-container">
-        <div id="ui-layer">
-            <div id="score-board">SCORE: 0</div>
-        </div>
+        <div id="ui-score">SCORE: 0</div>
         <canvas id="gameCanvas"></canvas>
         <div id="game-over-screen" class="hidden">
-            <h1>CRASHED!</h1>
+            <h1>GAME OVER</h1>
             <p id="final-score">Score: 0</p>
-            <button onclick="restartGame()">PLAY AGAIN</button>
+            <button onclick="resetGame()">PLAY AGAIN</button>
         </div>
     </div>
 
     <script>
-        // Initialize Telegram WebApp
         if (window.Telegram && window.Telegram.WebApp) {
             window.Telegram.WebApp.ready();
             window.Telegram.WebApp.expand();
@@ -132,166 +118,138 @@
 
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const scoreBoard = document.getElementById('score-board');
+        const scoreEl = document.getElementById('ui-score');
         const gameOverScreen = document.getElementById('game-over-screen');
-        const finalScoreDisplay = document.getElementById('final-score');
+        const finalScoreEl = document.getElementById('final-score');
 
-        // Internal Game Resolution
-        const WIDTH = 400;
-        const HEIGHT = 700;
-        canvas.width = WIDTH;
-        canvas.height = HEIGHT;
+        canvas.width = 400;
+        canvas.height = 600;
 
-        const GROUND_Y = 550;
-        let game = {
-            score: 0,
-            speed: 6,
-            isOver: false
-        };
+        const GROUND_Y = 480;
+
+        let score = 0;
+        let isGameOver = false;
 
         let player = {
-            x: 60,
-            y: GROUND_Y - 60,
+            x: 50,
+            y: GROUND_Y - 55,
             width: 40,
-            height: 60,
+            height: 55,
             vy: 0,
-            gravity: 0.7,
-            jumpPower: -13.5,
-            jumping: false
+            gravity: 0.65,
+            jumpForce: -12,
+            isJumping: false
         };
 
         let obstacles = [];
-        let particles = [];
 
-        // Controls
-        window.addEventListener('touchstart', triggerJump);
-        window.addEventListener('mousedown', triggerJump);
+        window.addEventListener('touchstart', jumpAction);
+        window.addEventListener('mousedown', jumpAction);
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Space' || e.code === 'ArrowUp') {
-                triggerJump();
+                jumpAction();
             }
         });
 
-        function triggerJump(e) {
+        function jumpAction(e) {
             if (e && e.type === 'touchstart') e.preventDefault();
-            if (!player.jumping && !game.isOver) {
-                player.vy = player.jumpPower;
-                player.jumping = true;
+            if (!player.isJumping && !isGameOver) {
+                player.vy = player.jumpForce;
+                player.isJumping = true;
             }
         }
 
-        function update() {
-            if (game.isOver) return;
+        function updateGame() {
+            if (isGameOver) return;
 
-            // Player Physics
+            // Physics
             player.vy += player.gravity;
             player.y += player.vy;
 
             if (player.y >= GROUND_Y - player.height) {
                 player.y = GROUND_Y - player.height;
                 player.vy = 0;
-                player.jumping = false;
+                player.isJumping = false;
             }
 
-            // Obstacle Spawning
+            // Spawn Obstacles
             if (Math.random() < 0.02) {
-                if (obstacles.length === 0 || obstacles[obstacles.length - 1].x < WIDTH - 200) {
+                if (obstacles.length === 0 || obstacles[obstacles.length - 1].x < 240) {
                     obstacles.push({
-                        x: WIDTH,
-                        y: GROUND_Y - 50,
+                        x: canvas.width,
+                        y: GROUND_Y - 45,
                         width: 30,
-                        height: 50,
-                        color: '#ff4757'
+                        height: 45
                     });
                 }
             }
 
-            // Move Obstacles & Check Collisions
+            // Move Obstacles
             for (let i = obstacles.length - 1; i >= 0; i--) {
-                obstacles[i].x -= game.speed;
+                obstacles[i].x -= 5;
 
-                // Collision Detection (AABB)
+                // Collision
                 if (
                     player.x < obstacles[i].x + obstacles[i].width &&
                     player.x + player.width > obstacles[i].x &&
                     player.y < obstacles[i].y + obstacles[i].height &&
                     player.y + player.height > obstacles[i].y
                 ) {
-                    endGame();
+                    triggerGameOver();
                 }
 
-                // Remove offscreen obstacles
                 if (obstacles[i].x + obstacles[i].width < 0) {
                     obstacles.splice(i, 1);
-                    game.score += 10;
-                    scoreBoard.innerText = SCORE: ${game.score};
-                    
-                    // Gradually increase speed
-                    if (game.speed < 12) game.speed += 0.1;
+                    score += 10;
+                    scoreEl.innerText = `SCORE: ${score}`;
                 }
             }
 
-            draw();
-            requestAnimationFrame(update);
+            renderGame();
+            requestAnimationFrame(updateGame);
         }
 
-        function draw() {
-            // Clear Screen
-            ctx.clearRect(0, 0, WIDTH, HEIGHT);
+        function renderGame() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Draw Background Grid/Stars effect
-            ctx.fillStyle = '#16192b';
-            ctx.fillRect(0, 0, WIDTH, GROUND_Y);
+            // Ground Area
+            ctx.fillStyle = '#111318';
+            ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
 
-            // Draw Ground
-            ctx.fillStyle = '#0f111a';
-            ctx.fillRect(0, GROUND_Y, WIDTH, HEIGHT - GROUND_Y);
-            
-            // Neon Ground Line
-            ctx.strokeStyle = '#00f2fe';
-            ctx.lineWidth = 4;
-            ctx.beginPath();
-            ctx.moveTo(0, GROUND_Y);
-            ctx.lineTo(WIDTH, GROUND_Y);
-            ctx.stroke();
+            // Neon Ground Border Line
+            ctx.fillStyle = '#66fcf1';
+            ctx.fillRect(0, GROUND_Y, canvas.width, 5);
 
-            // Draw Player (NeoRider character representation)
-            ctx.fillStyle = '#00f2fe';
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = '#00f2fe';
+            // Draw Player (Bright Yellow so it's clearly visible)
+            ctx.fillStyle = '#ffd32a';
             ctx.fillRect(player.x, player.y, player.width, player.height);
 
-            // Draw Obstacles
-            ctx.shadowColor = '#ff4757';
+            // Draw Obstacles (Bright Orange/Red)
+            ctx.fillStyle = '#ff4757';
             obstacles.forEach(obs => {
-                ctx.fillStyle = obs.color;
                 ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
             });
-
-            // Reset shadow for performance
-            ctx.shadowBlur = 0;
         }
-        function endGame() {
-            game.isOver = true;
-            finalScoreDisplay.innerText = Score: ${game.score};
+
+        function triggerGameOver() {
+            isGameOver = true;
+            finalScoreEl.innerText = `Score: ${score}`;
             gameOverScreen.classList.remove('hidden');
         }
 
-        function restartGame() {
-            game.score = 0;
-            game.speed = 6;
-            game.isOver = false;
+        function resetGame() {
+            score = 0;
+            isGameOver = false;
             player.y = GROUND_Y - player.height;
             player.vy = 0;
-            player.jumping = false;
+            player.isJumping = false;
             obstacles = [];
-            scoreBoard.innerText = SCORE: 0;
+            scoreEl.innerText = `SCORE: 0`;
             gameOverScreen.classList.add('hidden');
-            update();
+            updateGame();
         }
 
-        // Start Game Loop
-        update();
+        updateGame();
     </script>
 </body>
 </html>
